@@ -1,6 +1,6 @@
 "use client";
 
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, PointerEvent, SetStateAction } from "react";
 import { useEffect, useMemo, useRef } from "react";
 import type Phaser from "phaser";
 import type { Arena, DifficultyProfile, GameModeSelection, GameResult, GameSnapshot, PaddleSide, SideState, UserSetup } from "@/types/game";
@@ -8,6 +8,8 @@ import { getActiveSides } from "@/lib/gameConfig";
 
 type Direction = -1 | 0 | 1;
 type TouchInput = Partial<Record<PaddleSide, Direction>>;
+type PointerTargets = Partial<Record<PaddleSide, number>>;
+type PaddlePositions = Record<PaddleSide, number>;
 
 const WIDTH = 960;
 const HEIGHT = 540;
@@ -15,6 +17,7 @@ const BALL_RADIUS = 9;
 const VERTICAL_PADDLE = { width: 14, height: 104 };
 const HORIZONTAL_PADDLE = { width: 126, height: 14 };
 const PADDLE_MARGIN = 28;
+const POINTER_SPEED = 720;
 
 const keyHints: Record<PaddleSide, string> = {
   left: "W / S",
@@ -45,6 +48,14 @@ export function GameCanvas({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const touchRef = useRef<TouchInput>({});
+  const pointerTargetsRef = useRef<PointerTargets>({});
+  const pointerAssignmentsRef = useRef(new Map<number, PaddleSide>());
+  const paddlePositionsRef = useRef<PaddlePositions>({
+    left: HEIGHT / 2,
+    right: HEIGHT / 2,
+    top: WIDTH / 2,
+    bottom: WIDTH / 2,
+  });
   const gameOverRef = useRef(false);
 
   const activeSides = useMemo(() => getActiveSides(mode.sides), [mode.sides]);
@@ -127,21 +138,42 @@ export function GameCanvas({
             if (!paddle || !state.active) return;
 
             const horizontal = state.side === "top" || state.side === "bottom";
+            const pointerTarget = state.human ? pointerTargetsRef.current[state.side] : undefined;
             const direction = state.human ? this.humanDirection(state.side) : this.aiDirection(state.side, horizontal);
             const speed = state.human ? 390 : difficulty.aiSpeed;
 
             if (horizontal) {
+              if (pointerTarget !== undefined) {
+                paddle.x = PhaserRuntime.Math.Clamp(
+                  moveToward(paddle.x, pointerTarget, POINTER_SPEED * dt),
+                  HORIZONTAL_PADDLE.width / 2 + 14,
+                  WIDTH - HORIZONTAL_PADDLE.width / 2 - 14,
+                );
+                paddlePositionsRef.current[state.side] = paddle.x;
+                return;
+              }
               paddle.x = PhaserRuntime.Math.Clamp(
                 paddle.x + direction * speed * dt,
                 HORIZONTAL_PADDLE.width / 2 + 14,
                 WIDTH - HORIZONTAL_PADDLE.width / 2 - 14,
               );
+              paddlePositionsRef.current[state.side] = paddle.x;
             } else {
+              if (pointerTarget !== undefined) {
+                paddle.y = PhaserRuntime.Math.Clamp(
+                  moveToward(paddle.y, pointerTarget, POINTER_SPEED * dt),
+                  VERTICAL_PADDLE.height / 2 + 14,
+                  HEIGHT - VERTICAL_PADDLE.height / 2 - 14,
+                );
+                paddlePositionsRef.current[state.side] = paddle.y;
+                return;
+              }
               paddle.y = PhaserRuntime.Math.Clamp(
                 paddle.y + direction * speed * dt,
                 VERTICAL_PADDLE.height / 2 + 14,
                 HEIGHT - VERTICAL_PADDLE.height / 2 - 14,
               );
+              paddlePositionsRef.current[state.side] = paddle.y;
             }
           });
         }
@@ -332,10 +364,67 @@ export function GameCanvas({
     touchRef.current = { ...touchRef.current, [side]: direction };
   }
 
+  function setPointerTarget(side: PaddleSide, value: number | undefined) {
+    pointerTargetsRef.current = { ...pointerTargetsRef.current, [side]: value };
+  }
+
+  function updatePointerTarget(event: PointerEvent<HTMLDivElement>, requireNearPaddle: boolean) {
+    const point = toGamePoint(event);
+    if (!point) return;
+
+    const side = nearestHumanSide(point, humanSides, paddlePositionsRef.current, requireNearPaddle);
+    const previousSide = pointerAssignmentsRef.current.get(event.pointerId);
+    if (!side) {
+      if (previousSide) {
+        pointerAssignmentsRef.current.delete(event.pointerId);
+        setPointerTarget(previousSide, undefined);
+      }
+      return;
+    }
+
+    if (previousSide && previousSide !== side) {
+      setPointerTarget(previousSide, undefined);
+    }
+    pointerAssignmentsRef.current.set(event.pointerId, side);
+    setPointerTarget(side, side === "top" || side === "bottom" ? point.x : point.y);
+  }
+
+  function clearPointerTarget(event: PointerEvent<HTMLDivElement>) {
+    const side = pointerAssignmentsRef.current.get(event.pointerId);
+    if (!side) return;
+
+    pointerAssignmentsRef.current.delete(event.pointerId);
+    setPointerTarget(side, undefined);
+  }
+
+  function toGamePoint(event: PointerEvent<HTMLDivElement>) {
+    const rect = hostRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0 || rect.height === 0) return null;
+
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * WIDTH,
+      y: ((event.clientY - rect.top) / rect.height) * HEIGHT,
+    };
+  }
+
   return (
     <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-2">
       <div
         ref={hostRef}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          updatePointerTarget(event, false);
+        }}
+        onPointerMove={(event) => {
+          updatePointerTarget(event, event.pointerType === "mouse" && event.buttons === 0);
+        }}
+        onPointerUp={clearPointerTarget}
+        onPointerCancel={clearPointerTarget}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse") {
+            clearPointerTarget(event);
+          }
+        }}
         className="game-canvas-wrap min-h-0 rounded-2xl border border-cyan-300/24 bg-slate-950/70 shadow-[0_0_34px_rgba(34,211,238,0.16)]"
       />
       <div className="grid shrink-0 gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
@@ -398,6 +487,48 @@ function boolDir(negative?: boolean, positive?: boolean): Direction {
   if (negative && !positive) return -1;
   if (positive && !negative) return 1;
   return 0;
+}
+
+function moveToward(current: number, target: number, maxDelta: number) {
+  const delta = target - current;
+  if (Math.abs(delta) <= maxDelta) return target;
+  return current + Math.sign(delta) * maxDelta;
+}
+
+function nearestHumanSide(
+  point: { x: number; y: number },
+  humanSides: PaddleSide[],
+  positions: PaddlePositions,
+  requireNearPaddle: boolean,
+) {
+  let selected: PaddleSide | null = null;
+  let selectedScore = Number.POSITIVE_INFINITY;
+
+  humanSides.forEach((side) => {
+    const horizontal = side === "top" || side === "bottom";
+    const edgeDistance = edgeDistanceForSide(point, side);
+    const axisDistance = Math.abs((horizontal ? point.x : point.y) - positions[side]);
+    const paddleHalf = horizontal ? HORIZONTAL_PADDLE.width / 2 : VERTICAL_PADDLE.height / 2;
+
+    if (requireNearPaddle && (edgeDistance > 118 || axisDistance > paddleHalf + 76)) {
+      return;
+    }
+
+    const score = edgeDistance * 1.8 + axisDistance * 0.35;
+    if (score < selectedScore) {
+      selected = side;
+      selectedScore = score;
+    }
+  });
+
+  return selected;
+}
+
+function edgeDistanceForSide(point: { x: number; y: number }, side: PaddleSide) {
+  if (side === "left") return Math.abs(point.x - PADDLE_MARGIN);
+  if (side === "right") return Math.abs(point.x - (WIDTH - PADDLE_MARGIN));
+  if (side === "top") return Math.abs(point.y - PADDLE_MARGIN);
+  return Math.abs(point.y - (HEIGHT - PADDLE_MARGIN));
 }
 
 function within(value: number, center: number, half: number) {
