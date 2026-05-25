@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #050711;
+  --panel: rgba(11, 16, 34, 0.82);
+  --panel-strong: rgba(15, 23, 42, 0.96);
+  --cyan: #22d3ee;
+  --pink: #fb3fb4;
+  --lime: #a3ff12;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  background: var(--bg);
+  color: #f8fbff;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body), system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+.font-display {
+  font-family: var(--font-display), system-ui, sans-serif;
+}
+
+.app-shell {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(34, 211, 238, 0.24), transparent 28rem),
+    radial-gradient(circle at 82% 20%, rgba(251, 63, 180, 0.2), transparent 26rem),
+    linear-gradient(140deg, #040612 0%, #0a1026 48%, #09060f 100%);
+}
+
+.grid-glow {
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.08) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent);
+}
+
+.neon-card {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.88), rgba(7, 10, 22, 0.78));
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.36);
+}
+
+.neon-ring {
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 238, 0.35),
+    0 0 28px rgba(34, 211, 238, 0.22),
+    inset 0 0 28px rgba(251, 63, 180, 0.08);
+}
+
+.game-page-lock {
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+.game-canvas-wrap canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 16px;
+}
